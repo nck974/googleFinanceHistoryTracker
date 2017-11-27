@@ -1,0 +1,177 @@
+function recordHistory() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  
+  var sheet1 = ss.getSheetByName("Shares"); //Get values
+  var sheet2 = ss.getSheetByName("History"); //Store history
+  var sheet3 = ss.getSheetByName("Dividends"); //Get Dividends
+  
+  //****************************************
+  //HEADER
+  //****************************************
+  var source = sheet1.getRange("C2:C67");  
+  var values = source.getValues();
+  var result = new Array(source.getNumRows() + 6); 
+  result[0] = "";
+  for(var x=0; x < source.getNumRows(); x++){
+    result[x+1]=values[x].toString()
+  }
+  result[source.getNumRows()+1]='Total';
+  result[source.getNumRows()+2]='Investment';
+  result[source.getNumRows()+3]='Profit';
+  result[source.getNumRows()+4]='Dividends';
+  result[source.getNumRows()+5]='Profit w/dividends';
+  result[source.getNumRows()+6]='Ibex Profit';
+  
+  
+  
+  sheet2.appendRow(result);
+  
+  Logger.log('Stock Name Saved Successfully');
+  
+  
+  //****************************************
+  //SET UP
+  //****************************************  
+  var source2 = sheet1.getRange("A2:AB67"); //Get all values
+  var values2 = source2.getValues();
+  
+  
+  var startDate = new Date(2017,01-1,30);
+  var now = new Date();  
+  //****************************************
+  //LOOP DATE
+  //****************************************  
+  for(var date = startDate; date < now; date.setDate( date.getDate() + 15 )){ 
+    var newLine = new Array (source2.getNumRows() + 6); //Array which will be appended for each row
+    var investment = 0; //Value containing total investment in €
+    
+    Logger.log('newLine length at the begining is: ' +  newLine.length);
+    Logger.log('JS generated date:' + date);
+    
+    newLine[0] = date;
+    
+    //****************************************
+    //LOOP DATA
+    //****************************************  
+    
+    for (var i = 0; i< values2.length ; i++){ //For each value
+      
+      Logger.log('This is the stock_value number: ' + i);
+            
+      if(new Date(values2[i][0]).getTime() <= date.getTime()){ //Check if it was bought before this date
+        
+        var ticker = values2[i][3];
+        var market = values2[i][4];
+        var shares = values2[i][5];
+        var name = values2[i][2];
+        var price = values2[i][6];
+        var currency = values2[i][7];     
+        var costs = values2[i][10] + values2[i][10] + values2[i][12];
+        var xchange_buy = values2[i][14];
+        var xchange_sell = values2[i][16];
+        var sold = values2[i][25];
+        var date_formated = Utilities.formatDate(date, "GMT+1:00", "yyyy-MM-dd");
+        
+        Logger.log(' Ticker: ' + ticker + ' Market: ' + market + ' Shares:' +  shares + ' Name: ' + name + ' Price: ' + price + ' Costs: ' + costs + ' Sold: ' + sold);
+        debugger;
+        
+        investment = investment + shares * price * xchange_buy + costs;
+        
+        //If sold and after sold date, change date to sold date:
+        if (sold != 0 && new Date(values2[i][26]).getTime() <= date.getTime()) { 
+          date_formated =  Utilities.formatDate(new Date(values2[i][26]), "GMT+1:00", "yyyy-MM-dd");
+        }
+        
+        //Check if it's in other currency:
+        var stockPrice;
+        if (currency == 'EUR') {
+          stockPrice = '=' + shares +'* INDEX(GoogleFinance("'+ market +  ':' + ticker + '"; "price";"' + date_formated + '"; TODAY());2;2)';
+        }
+        
+        else{
+          var currency_query = 'INDEX(GoogleFinance("CURRENCY:USDEUR";"price";"' + date_formated + '"; TODAY());2;2)';
+          stockPrice = '=' + currency_query + ' * ' + shares +'* INDEX(GoogleFinance("'+ market +  ':' + ticker + '"; "price";"' + date_formated + '"; TODAY());2;2)';
+        }
+        
+        newLine[i+1] = ""+ stockPrice;
+        
+        if((ticker == 'POP') && (new Date(2017,06-1,20).getTime() <= new Date(date.getTime()))){
+          newLine[i+1] = 0;
+        }
+
+        Logger.log('The vale that will be stored is: ' + stockPrice);
+      }
+      
+      
+      else { //If it wasn't bought, just put 0
+        newLine[i+1]=0;
+        var ticker = values2[i][3];
+        var market = values2[i][4];
+        var newdate = new Date(values2[i][0])
+        Logger.log('The stock value: ' + ticker + ':' + market + ' is not bought till '+ newdate + '.' );
+      }
+    }
+    
+    //****************************************
+    //GET PROFIT
+    //****************************************  
+    
+    newLine[source2.getNumRows()+1]='=SUM(B' + (sheet2.getLastRow()+1) + ':'+ columnToLetter(source2.getNumRows()+1)+(sheet2.getLastRow()+1)+')';
+    newLine[source2.getNumRows()+2]=investment;
+    var investment_cell = '' + columnToLetter(source2.getNumRows() + 3) + (sheet2.getLastRow() + 1);
+    var total_cell = '' + columnToLetter(source2.getNumRows()+2) + (sheet2.getLastRow() + 1);
+    newLine[source2.getNumRows()+3] = '= (' + total_cell + '- ' + investment_cell + ')/' + investment_cell;
+    newLine[source2.getNumRows()+4] = getDividendsSum(date, sheet3);
+    var dividends_cell = '' + columnToLetter(source2.getNumRows() + 5) + (sheet2.getLastRow() + 1);
+    newLine[source2.getNumRows()+5] = '= (' + total_cell + '+' + dividends_cell + '- ' + investment_cell + ')/' + investment_cell;
+    var ibex_price = 'INDEX(GoogleFinance("INDEXBME:IB";"close";"' + Utilities.formatDate(new Date(date), "GMT+1:00", "yyyy-MM-dd") + '"; TODAY());2;2)';
+    var ibex_start = 'INDEX(GoogleFinance("INDEXBME:IB";"close";"' + Utilities.formatDate(new Date(2017,01-1,30), "GMT+1:00", "yyyy-MM-dd") + '"; TODAY());2;2)';    
+    newLine[source2.getNumRows()+6] = '= (' + ibex_price + '- ' + ibex_start + ')/' + ibex_start;
+    
+    //Format:
+    sheet2.getRange('' + columnToLetter(source2.getNumRows() + 4) + (sheet2.getLastRow() + 1)).setNumberFormat("00.00%");
+    sheet2.getRange('' + columnToLetter(source2.getNumRows() + 6) + (sheet2.getLastRow() + 1)).setNumberFormat("00.00%");
+    sheet2.getRange('' + columnToLetter(source2.getNumRows() + 7) + (sheet2.getLastRow() + 1)).setNumberFormat("00.00%");
+
+    //****************************************
+    //WRITE DATA
+    //****************************************    
+    Logger.log('Lets print the end result:');
+    Logger.log('newLine length is :' + newLine.length);
+    for (var i in newLine){
+      Logger.log('This is value number: '+ i);
+      Logger.log(newLine[i]);
+    }
+    
+    sheet2.appendRow(newLine);
+  }
+};
+
+function columnToLetter(column)
+{
+  var temp, letter = '';
+  while (column > 0)
+  {
+    temp = (column - 1) % 26;
+    letter = String.fromCharCode(temp + 65) + letter;
+    column = (column - temp - 1) / 26;
+  }
+  return letter;
+}
+
+function getDividendsSum (date, sheet3){
+  var source3 = sheet3.getRange("A2:F100");  
+  var values3 = source3.getValues();
+  
+  result = 0;
+  
+  for (var i = 0; i < values3.length; i++){
+    if (sheet3.getRange('A' + (2+i)).isBlank()){
+     break; 
+    }
+    if(new Date(values3[i][0]).getTime() <= date.getTime()){
+      result = result + values3[i][5];
+    }
+  }
+  return result;
+}
